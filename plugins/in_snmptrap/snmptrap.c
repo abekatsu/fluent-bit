@@ -1,11 +1,47 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
+#include <stdio.h>
+#include <stdlib.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
+
+#include <msgpack.h>
 #include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_error.h>
+#include <fluent-bit/flb_utils.h>
 
 #include "snmptrap.h"
 #include "snmptrap_conf.h"
+#include "snmptrap_server.h"
+#include "snmptrap_conn.h"
+#include "snmptrap_prot.h"
 
 /* cb_collect callback */
+static int in_snmptrap_collect_tcp(struct flb_input_instance *i_ins,
+                                   struct flb_config *config, void *in_context)
+{
+    int fd;
+    struct flb_snmptrap *ctx = in_context;
+    struct snmptrap_conn *conn;
+    (void) i_ins;
+
+    /* Accept the new connection */
+    fd = flb_net_accept(ctx->server_fd);
+    if (fd == -1) {
+        flb_error("[in_snmptrap] could not accept new connection");
+        return -1;
+    }
+
+    flb_trace("[in_snmptrap] new Unix connection arrived FD=%i", fd);
+    conn = snmptrap_conn_add(fd, ctx);
+    if (!conn) {
+        return -1;
+    }
+
+    return 0;
+}
 
 
 /*
@@ -16,22 +52,21 @@ static int in_snmptrap_collect_udp(struct flb_input_instance *i_ins,
                                    void *in_context)
 {
     int fd;
-    struct flb_syslog *ctx = in_context;
-    struct syslog_conn *conn;
+    struct flb_snmptrap *ctx = in_context;
     (void) i_ins;
 
-    /* Accept the new connection */
-    fd = flb_net_accept(ctx->server_fd);
-    if (fd == -1) {
-        flb_error("[in_syslog] could not accept new connection");
-        return -1;
+    bytes = recvfrom(ctx->server_fd,
+                     ctx->buffer_data, ctx->buffer_size - 1, 0,
+                     NULL, NULL);
+    if (bytes > 0) {
+        ctx->buffer_data[bytes] = '\0';
+        ctx->buffer_len = bytes;
+        snmptrap_prot_process_udp(ctx->buffer_data, ctx->buffer_len, ctx);
     }
-
-    flb_trace("[in_snmptrap] new Unix connection arrived FD=%i", fd);
-    conn = syslog_conn_add(fd, ctx);
-    if (!conn) {
-        return -1;
+    else {
+        flb_errno();
     }
+    ctx->buffer_len = 0;
 
     return 0;
 }
@@ -52,9 +87,10 @@ static int in_snmtrap_init(struct flb_input_instance *in,
         return -1;
     }
 
-    ret = snmptrap_server_create(ctx);
+    /* Create Unix Socket */
+    ret = syslog_server_create(ctx);
     if (ret == -1) {
-        snmptrap_conf_destroy(ctx);
+        syslog_conf_destroy(ctx);
         return -1;
     }
 
@@ -63,9 +99,10 @@ static int in_snmtrap_init(struct flb_input_instance *in,
 
     /* Collect events for every opened connection to our socket */
     if (ctx->mode == FLB_SNMPTRAP_TCP) {
-        flb_error("[in_snmptrap] binding tcp port is not supported yet");
-        snmptrap_conf_destroy(ctx);
-        return -1;
+        ret = flb_input_set_collector_socket(in,
+                                             in_snmptrap_collect_tcp,
+                                             ctx->server_fd,
+                                             config);
     }
     else {
         ret = flb_input_set_collector_socket(in,
@@ -82,8 +119,6 @@ static int in_snmtrap_init(struct flb_input_instance *in,
 
     return 0;
 }
-
-
 
 /* Destory plugin */
 static int in_snmptrap_exit(void *data, struct flb_config *config)

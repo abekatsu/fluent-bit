@@ -1,5 +1,13 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
+#include <fluent-bit/flb_info.h>
+#include <fluent-bit/flb_config.h>
+#include <fluent-bit/flb_input.h>
+#include <fluent-bit/flb_str.h>
+#include <fluent-bit/flb_log.h>
+#include <fluent-bit/flb_parser.h>
+#include <fluent-bit/flb_utils.h>
+
 #include "snmptrap.h"
 #include "snmptrap_server.h"
 #include "snmptrap_conf.h"
@@ -26,6 +34,9 @@ struct flb_snmptrap *snmptrap_conf_create(struct flb_input_instance *i_ins,
     if (tmp) {
         if (strcasecmp(tmp, "udp") == 0) {
             ctx->mode = FLB_SNMPTRAP_UDP;
+        }
+        else if (strcasecmp(tmp, "tcp") == 0) {
+            ctx->mode = FLB_SNMPTRAP_TCP;
         }
         else {
             flb_error("[in_syslog] Unknown snmptrap mode %s", tmp);
@@ -61,7 +72,39 @@ struct flb_snmptrap *snmptrap_conf_create(struct flb_input_instance *i_ins,
         ctx->port = flb_strdup(port);
     }
 
+    /* Buffer Chunk Size */
+    tmp = flb_input_get_property("buffer_chunk_size", i_ins);
+    if (!tmp) {
+        ctx->buffer_chunk_size = FLB_SYSLOG_CHUNK; /* 32KB */
+    }
+    else {
+        ctx->buffer_chunk_size = flb_utils_size_to_bytes(tmp);
+    }
+
+    /* Buffer Max Size */
+    tmp = flb_input_get_property("buffer_max_size", i_ins);
+    if (!tmp) {
+        ctx->buffer_max_size = ctx->buffer_chunk_size;
+    }
+    else {
+        ctx->buffer_max_size  = flb_utils_size_to_bytes(tmp);
+    }
+
+
     /* TODO: parser */
+    tmp = flb_input_get_property("parser", i_ins);
+    if (tmp) {
+        ctx->parser = flb_parser_get(tmp, config);
+    }
+    else {
+        ctx->parser = flb_parser_get("syslog-rfc3164-local", config); // TODO; what's syslog-rfc3164-local
+    }
+
+    if (!ctx->parser) {
+        flb_error("[in_syslog] parser not set");
+        syslog_conf_destroy(ctx);
+        return NULL;
+    }
 
     return ctx;
 }

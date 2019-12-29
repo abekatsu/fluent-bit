@@ -4,7 +4,7 @@
 #include <fluent-bit/flb_macros.h>
 #include <fluent-bit/flb_log.h>
 #include <fluent-bit/flb_network.h>
-np
+
 #include <unistd.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -67,10 +67,8 @@ int snmptrap_server_destroy(struct flb_snmptrap *ctx)
         flb_free(ctx->listen);
         flb_free(ctx->port);
     }
-    else {
-    }
-
+    
     close(ctx->server_fd);
-
+    
     return 0;
 }
