@@ -1,10 +1,30 @@
 /* -*- Mode: C; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 4 -*- */
 
+/*  Fluent Bit
+ *  ==========
+ *  Copyright (C) 2019      The Fluent Bit Authors
+ *  Copyright (C) 2015-2018 Treasure Data Inc.
+ *
+ *  Licensed under the Apache License, Version 2.0 (the "License");
+ *  you may not use this file except in compliance with the License.
+ *  You may obtain a copy of the License at
+ *
+ *      http://www.apache.org/licenses/LICENSE-2.0
+ *
+ *  Unless required by applicable law or agreed to in writing, software
+ *  distributed under the License is distributed on an "AS IS" BASIS,
+ *  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ *  See the License for the specific language governing permissions and
+ *  limitations under the License.
+ */
+
 #include <string.h>
 
 #include <fluent-bit/flb_info.h>
 #include <fluent-bit/flb_parser.h>
 #include <fluent-bit/flb_time.h>
+
+#include <mbedtls/asn1.h>
 
 #include "syslog.h"
 #include "syslog_conn.h"
@@ -34,6 +54,11 @@ static inline int pack_line(struct flb_snmptrap *ctx,
     return 0;
 }
 
+/*
+ * SNMPTrap PDU
+ *
+ */
+
 int snmptrap_prot_process(struct snmptrap_conn *conn)
 {
     int len;
@@ -45,13 +70,13 @@ int snmptrap_prot_process(struct snmptrap_conn *conn)
     size_t out_size;
     struct flb_time out_time;
     struct flb_snmptrap *ctx = conn->ctx;
-    
+
     eof = conn->buf_data;
     end = conn->buf_data + conn->buf_len;
 
     /* Always parse while some remaining bytes exists */
     while (eof < end) {
-        /* Lookup the ending byte */ 
+        /* Lookup the ending byte */
         eof = p = conn->buf_data + conn->buf_parsed;
         while (*eof != '\n' && *eof != '\0' && eof < end) {
             eof++;
@@ -106,12 +131,36 @@ int snmptrap_prot_process(struct snmptrap_conn *conn)
     return 0;
 }
 
-int snmptrap_prot_process_udp(char *buf, size_t size, struct flb_snmptrap *ctx)
+int snmptrap_prot_process_udp(unsinged char *buf, size_t size, struct flb_snmptrap *ctx)
 {
     int ret;
     void *out_buf;
-    size_t out_size;
+    int ret, version;
+    size_t len;
     struct flb_time out_time = {0};
+    // mbedtls_asn1_buf *buf;
+    unsinged char **p;
+    unsinged char *end;
+
+
+    p = &buf;
+    end = buf + size;
+    /* Get main sequence tag */
+    ret = mbedtls_asn1_get_tag(p, end, &len,
+                               MBEDTLS_ASN1_CONSTRUCTED | MBEDTLS_ASN1_SEQUENCE );
+    if (ret != 0) {
+        flb_warn("[in_snmptrap] error - unexpcected trap/inform message");
+        return -1;
+    }
+    printf("size: %lu, len: %l\n");
+    if (*p + len != end) {
+        flb_warn("[in_snmptrap] error - length mismatch");
+        return -1;
+    }
+
+    /* Get SNMP version */
+    ret = mbedtls_asn1_get_int(p, end, &version);
+
 
     ret = flb_parser_do(ctx->parser, buf, size,
                         &out_buf, &out_size, &out_time);

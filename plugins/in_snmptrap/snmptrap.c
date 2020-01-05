@@ -59,9 +59,8 @@ static int in_snmptrap_collect_udp(struct flb_input_instance *i_ins,
                      ctx->buffer_data, ctx->buffer_size - 1, 0,
                      NULL, NULL);
     if (bytes > 0) {
-        ctx->buffer_data[bytes] = '\0';
         ctx->buffer_len = bytes;
-        snmptrap_prot_process_udp(ctx->buffer_data, ctx->buffer_len, ctx);
+        snmptrap_prot_process_udp(&ctx->buffer_data, ctx->buffer_len, ctx);
     }
     else {
         flb_errno();

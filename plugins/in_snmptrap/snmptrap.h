@@ -22,7 +22,7 @@ struct flb_snmptrap {
     char *port;
 
     /* UDP buffer, data length and buffer size */
-    char *buffer_data;
+    unsigned char *buffer_data;
     size_t buffer_len;
     size_t buffer_size;
 
