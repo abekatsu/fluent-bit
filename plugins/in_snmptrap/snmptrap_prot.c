@@ -54,6 +54,16 @@ static inline int pack_line(struct flb_snmptrap *ctx,
     return 0;
 }
 
+static inline void print_mbedtls_asn1_bitstring(mbedtls_asn1_bitstring *bs)
+{
+    size_t i;
+    for (i = 0; i < bs->len; i++) {
+        print("%c", (char)*bs->p[i]);
+    }
+    printf("\n");
+    return 0;
+}
+
 /*
  * SNMPTrap PDU
  *
@@ -141,7 +151,8 @@ int snmptrap_prot_process_udp(unsinged char *buf, size_t size, struct flb_snmptr
     // mbedtls_asn1_buf *buf;
     unsinged char **p;
     unsinged char *end;
-
+    char *community = NULL;
+    mbedtls_asn1_bitstring community = {0, 0, NULL};
 
     p = &buf;
     end = buf + size;
@@ -161,6 +172,31 @@ int snmptrap_prot_process_udp(unsinged char *buf, size_t size, struct flb_snmptr
     /* Get SNMP version */
     ret = mbedtls_asn1_get_int(p, end, &version);
 
+    if (version == SNMP_VERSION_1) {
+    }
+    else if (version == SNMP_VERSION_2c) {
+        /* Get SNMP community */
+        ret = mbedtls_asn1_get_tag(p, end, &len, MBEDTLS_ASN1_OCTET_STRING);
+        if (ret != 0) {
+            flb_warn("[in_snmptrap] error - unexpcected snnmp trap pdu format");
+            return -1;
+        }
+        if (*p + len != end) {
+            flb_warn("[in_snmptrap] error - length mismatch");
+            return -1;
+        }
+        ret = mbedtls_asn1_get_bistring(p, end, &community);
+
+
+
+
+
+
+    }
+    else if (version == SNMP_VERSION_3) {
+        /* TODO: implemented */
+    }
+
 
     ret = flb_parser_do(ctx->parser, buf, size,
                         &out_buf, &out_size, &out_time);
@@ -175,6 +211,8 @@ int snmptrap_prot_process_udp(unsinged char *buf, size_t size, struct flb_snmptr
         flb_warn("[in_snmptrap] error parsing log message");
         return -1;
     }
+
+
 
     return 0;
 }
